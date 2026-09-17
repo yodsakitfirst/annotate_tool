@@ -22,3 +22,29 @@ class AnnotationProblem:
 class ParseResult:
     annotations: tuple[Annotation, ...]
     problems: tuple[AnnotationProblem, ...]
+
+
+@dataclass(frozen=True)
+class ClassInfo:
+    class_id: int
+    name: str
+    reference_path: Path | None
+
+
+@dataclass(frozen=True)
+class ImageRecord:
+    path: Path
+    relative_path: str
+    label_path: Path
+    parse_result: ParseResult
+    image_size: tuple[int, int] | None
+    image_error: str | None
+
+
+@dataclass(frozen=True)
+class AssignmentDataset:
+    root: Path
+    classes: tuple[ClassInfo, ...]
+    images: tuple[ImageRecord, ...]
+    class_metadata_path: Path
+    problems: tuple[AnnotationProblem, ...]
