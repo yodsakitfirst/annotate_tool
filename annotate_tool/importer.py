@@ -137,22 +137,21 @@ def ensure_original_backup(assignment_root: Path) -> Path:
         lock.unlink(missing_ok=True)
 
 
-def import_assignment(
+def import_dataset(
     zip_path: Path,
     display_name: str,
-    paths: AppPaths,
+    destination: Path,
     limits: ImportLimits,
-) -> ImportedAssignment:
+) -> Path:
     cleaned_name = display_name.strip()
     if not cleaned_name:
         raise AssignmentImportError("assignment display name is required")
 
     member_names = inspect_archive(zip_path, limits)
-    paths.ensure()
-    assignment_id = uuid.uuid4().hex
-    final_root = paths.assignments / assignment_id
     wrapper_prefix = _wrapper_prefix(member_names)
-    final_root.mkdir()
+    if destination.exists():
+        raise AssignmentImportError(f"dataset destination already exists: {destination}")
+    destination.mkdir(parents=True)
     imported = False
 
     try:
@@ -166,27 +165,42 @@ def import_assignment(
                     relative_parts = relative_parts[1:]
                 if not relative_parts:
                     continue
-                destination = final_root.joinpath(*relative_parts)
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                with archive.open(info) as source, destination.open("wb") as output:
+                output_path = destination.joinpath(*relative_parts)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(info) as source, output_path.open("wb") as output:
                     shutil.copyfileobj(source, output)
 
-        dataset_root = _dataset_root(final_root)
+        dataset_root = _dataset_root(destination)
         metadata = _metadata_path(dataset_root)
         (dataset_root / "source_name.txt").write_text(f"{cleaned_name}\n", encoding="utf-8")
         ensure_original_backup(dataset_root)
-        metadata_name = metadata.relative_to(dataset_root)
         imported = True
-        return ImportedAssignment(
-            assignment_id=assignment_id,
-            display_name=cleaned_name,
-            root=final_root,
-            class_metadata_path=final_root / metadata_name,
-        )
+        return metadata
     except AssignmentImportError:
         raise
     except (BadZipFile, OSError) as exc:
         raise AssignmentImportError(f"could not import assignment: {exc}") from exc
     finally:
-        if not imported and final_root.exists():
-            shutil.rmtree(final_root)
+        if not imported and destination.exists():
+            shutil.rmtree(destination)
+
+
+def import_assignment(
+    zip_path: Path,
+    display_name: str,
+    paths: AppPaths,
+    limits: ImportLimits,
+) -> ImportedAssignment:
+    cleaned_name = display_name.strip()
+    if not cleaned_name:
+        raise AssignmentImportError("assignment display name is required")
+    paths.ensure()
+    assignment_id = uuid.uuid4().hex
+    final_root = paths.assignments / assignment_id
+    metadata = import_dataset(zip_path, cleaned_name, final_root, limits)
+    return ImportedAssignment(
+        assignment_id=assignment_id,
+        display_name=cleaned_name,
+        root=final_root,
+        class_metadata_path=metadata,
+    )
