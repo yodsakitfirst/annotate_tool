@@ -1,10 +1,11 @@
 import math
 import re
+from collections.abc import Collection
 
 from annotate_tool.models import Annotation, AnnotationProblem, ParseResult
 
 
-def parse_label_text(text: str, expected_classes: int = 89) -> ParseResult:
+def parse_label_text(text: str, expected_classes: int | None = None) -> ParseResult:
     annotations: list[Annotation] = []
     problems: list[AnnotationProblem] = []
 
@@ -18,7 +19,9 @@ def parse_label_text(text: str, expected_classes: int = 89) -> ParseResult:
             if len(tokens) != 5:
                 raise ValueError("expected five YOLO fields")
             class_id = int(tokens[0])
-            if not 0 <= class_id < expected_classes:
+            if class_id < 0:
+                raise ValueError("class ID must be nonnegative")
+            if expected_classes is not None and class_id >= expected_classes:
                 raise ValueError(f"class ID {class_id} is outside expected range 0-{expected_classes - 1}")
             coordinates = tuple(float(token) for token in tokens[1:])
             if not all(math.isfinite(value) for value in coordinates):
@@ -66,8 +69,11 @@ def replace_class_token(
     expected_line: str,
     new_class_id: int,
     expected_classes: int = 89,
+    allowed_class_ids: Collection[int] | None = None,
 ) -> str:
-    if not 0 <= new_class_id < expected_classes:
+    if allowed_class_ids is not None and new_class_id not in frozenset(allowed_class_ids):
+        raise ValueError(f"class ID {new_class_id} is not in the project reference catalog")
+    if allowed_class_ids is None and not 0 <= new_class_id < expected_classes:
         raise ValueError(f"class ID {new_class_id} is outside expected range 0-{expected_classes - 1}")
 
     lines = text.splitlines(keepends=True)

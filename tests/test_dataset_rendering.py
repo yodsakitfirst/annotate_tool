@@ -4,6 +4,7 @@ from PIL import Image
 import pytest
 import yaml
 
+import annotate_tool.dataset as dataset_module
 from annotate_tool.dataset import DatasetLoadError, filter_classes, load_assignment
 from annotate_tool.rendering import crop_annotation, draw_numbered_boxes, reference_placeholder
 
@@ -83,11 +84,30 @@ def test_loads_optional_needs_review_source_class(dataset_root):
     assert dataset.images[0].parse_result.problems == ()
 
 
-def test_rejects_incomplete_class_mapping(dataset_root):
+def test_accepts_any_source_class_count(dataset_root):
     (dataset_root / "classes.txt").write_text("Only one\n", encoding="utf-8")
 
-    with pytest.raises(DatasetLoadError):
-        load_assignment(dataset_root)
+    dataset = load_assignment(dataset_root)
+
+    assert dataset.source_class_names == {0: "Only one"}
+
+
+def test_sparse_metadata_and_unmapped_source_do_not_block_loading(dataset_root):
+    (dataset_root / "classes.txt").unlink()
+    (dataset_root / "data.yaml").write_text(
+        yaml.safe_dump({"names": {2: "Legacy two", 9402: "Legacy special"}}),
+        encoding="utf-8",
+    )
+    (dataset_root / "labels" / "a.txt").write_text(
+        "9999 0.5 0.5 0.2 0.2\n",
+        encoding="utf-8",
+    )
+
+    dataset = load_assignment(dataset_root, reference_classes=())
+
+    assert dataset.source_class_names == {2: "Legacy two", 9402: "Legacy special"}
+    assert dataset_module.source_class_name(dataset, 9999) == "Unknown source class 9999"
+    assert dataset.images[0].parse_result.annotations[0].class_id == 9999
 
 
 def test_nested_images_map_to_nested_label_paths(dataset_root):

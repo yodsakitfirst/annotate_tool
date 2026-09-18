@@ -1,6 +1,7 @@
 from dataclasses import asdict, dataclass
 from io import BytesIO, StringIO
 import csv
+from collections.abc import Collection
 import json
 import os
 from pathlib import Path
@@ -23,10 +24,17 @@ def atomic_relabel(
     line_index: int,
     expected_line: str,
     new_class_id: int,
+    allowed_class_ids: Collection[int] | None = None,
 ) -> None:
     with label_path.open("r", encoding="utf-8", newline="") as source:
         original = source.read()
-    updated = replace_class_token(original, line_index, expected_line, new_class_id)
+    updated = replace_class_token(
+        original,
+        line_index,
+        expected_line,
+        new_class_id,
+        allowed_class_ids=allowed_class_ids,
+    )
     original_mode = label_path.stat().st_mode
     temporary_path: Path | None = None
 

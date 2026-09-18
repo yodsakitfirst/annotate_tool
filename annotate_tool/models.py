@@ -45,6 +45,7 @@ class ImageRecord:
 class AssignmentDataset:
     root: Path
     classes: tuple[ClassInfo, ...]
+    source_class_names: dict[int, str]
     images: tuple[ImageRecord, ...]
-    class_metadata_path: Path
+    class_metadata_path: Path | None
     problems: tuple[AnnotationProblem, ...]

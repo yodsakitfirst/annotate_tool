@@ -48,6 +48,23 @@ def test_atomic_relabel_rejects_stale_file_without_writing(tmp_path):
     assert list(tmp_path.glob(".a.txt.*.tmp")) == []
 
 
+def test_atomic_relabel_rejects_id_absent_from_reference_catalog(tmp_path):
+    label = tmp_path / "a.txt"
+    original = "9999 0.5 0.5 0.2 0.2\n"
+    label.write_text(original, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="reference catalog"):
+        atomic_relabel(
+            label,
+            0,
+            "9999 0.5 0.5 0.2 0.2",
+            4,
+            allowed_class_ids={1, 7, 20},
+        )
+
+    assert label.read_text(encoding="utf-8") == original
+
+
 def test_failed_replace_leaves_old_label_and_removes_temporary_file(tmp_path, monkeypatch):
     label = tmp_path / "a.txt"
     original = "2 0.5 0.5 0.2 0.2\n"

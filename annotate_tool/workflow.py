@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Collection
 
 from annotate_tool.models import Annotation, AssignmentDataset
 from annotate_tool.progress import ProgressRepository
@@ -113,6 +114,7 @@ def record_relabel(
     cursor: ReviewCursor,
     repository: ProgressRepository,
     new_class_id: int,
+    allowed_class_ids: Collection[int] | None = None,
 ) -> ReviewCursor:
     current_index, item = _selected(objects, cursor)
     atomic_relabel(
@@ -120,6 +122,7 @@ def record_relabel(
         item.line_index,
         item.annotation.original_line,
         new_class_id,
+        allowed_class_ids,
     )
     repository.record_decision(
         dataset_id,

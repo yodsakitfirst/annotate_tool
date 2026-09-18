@@ -24,35 +24,26 @@ class DatasetLoadError(ValueError):
     pass
 
 
-def _normalize_names(raw_names: Any) -> tuple[str, ...]:
+def _normalize_names(raw_names: Any) -> dict[int, str]:
     if isinstance(raw_names, list):
-        names = raw_names
+        keyed_names = dict(enumerate(raw_names))
     elif isinstance(raw_names, dict):
         try:
             keyed_names = {int(key): value for key, value in raw_names.items()}
         except (TypeError, ValueError) as exc:
             raise DatasetLoadError("class IDs in data.yaml must be integers") from exc
-        if set(keyed_names) not in (set(range(PRODUCT_CLASS_COUNT)), set(range(PRODUCT_CLASS_COUNT + 1))):
-            raise DatasetLoadError(
-                "class mapping must contain IDs 0 through 88, optionally followed by 89: Needs Review"
-            )
-        names = [keyed_names[index] for index in range(len(keyed_names))]
     else:
         raise DatasetLoadError("class metadata must contain a names list or dictionary")
 
-    if len(names) not in (PRODUCT_CLASS_COUNT, PRODUCT_CLASS_COUNT + 1):
-        raise DatasetLoadError(
-            "class mapping must contain 89 product names, optionally followed by Needs Review"
-        )
-    normalized = tuple(str(name).strip() for name in names)
-    if any(not name for name in normalized):
+    if any(class_id < 0 for class_id in keyed_names):
+        raise DatasetLoadError("class IDs in metadata must be nonnegative")
+    normalized = {class_id: str(name).strip() for class_id, name in keyed_names.items()}
+    if any(not name for name in normalized.values()):
         raise DatasetLoadError("class names cannot be blank")
-    if len(normalized) == PRODUCT_CLASS_COUNT + 1 and normalized[REVIEW_CLASS_ID].casefold() != REVIEW_CLASS_NAME.casefold():
-        raise DatasetLoadError("class 89 must be named Needs Review")
     return normalized
 
 
-def _load_class_names(root: Path) -> tuple[tuple[str, ...], Path]:
+def _load_class_names(root: Path) -> tuple[dict[int, str], Path | None]:
     yaml_path = root / "data.yaml"
     text_path = root / "classes.txt"
     if yaml_path.is_file():
@@ -69,7 +60,7 @@ def _load_class_names(root: Path) -> tuple[tuple[str, ...], Path]:
         except (OSError, UnicodeError) as exc:
             raise DatasetLoadError(f"could not read classes.txt: {exc}") from exc
         return _normalize_names(names), text_path
-    raise DatasetLoadError("dataset must contain data.yaml or classes.txt")
+    return {}, None
 
 
 def _reference_paths(root: Path) -> dict[int, Path]:
@@ -84,16 +75,25 @@ def _reference_paths(root: Path) -> dict[int, Path]:
             class_id = int(path.stem)
         except ValueError:
             continue
-        if 0 <= class_id < 89 and class_id not in found:
+        if class_id >= 0 and class_id not in found:
             found[class_id] = path
     return found
 
 
-def load_assignment(root: Path) -> AssignmentDataset:
+def load_assignment(
+    root: Path,
+    reference_classes: tuple[ClassInfo, ...] | None = None,
+) -> AssignmentDataset:
     resolved_root = root.resolve()
-    names, metadata_path = _load_class_names(resolved_root)
+    source_class_names, metadata_path = _load_class_names(resolved_root)
     references = _reference_paths(resolved_root)
-    classes = tuple(ClassInfo(index, name, references.get(index)) for index, name in enumerate(names))
+    if reference_classes is None:
+        classes = tuple(
+            ClassInfo(class_id, name, references.get(class_id))
+            for class_id, name in sorted(source_class_names.items())
+        )
+    else:
+        classes = reference_classes
     problems: list[AnnotationProblem] = []
     images_root = resolved_root / "images"
     labels_root = resolved_root / "labels"
@@ -127,10 +127,7 @@ def load_assignment(root: Path) -> AssignmentDataset:
 
         if label_path.is_file():
             try:
-                parsed = parse_label_text(
-                    label_path.read_text(encoding="utf-8"),
-                    expected_classes=len(names),
-                )
+                parsed = parse_label_text(label_path.read_text(encoding="utf-8"))
             except (OSError, UnicodeError) as exc:
                 parsed = ParseResult((), (AnnotationProblem(None, f"could not read label: {exc}", label_path),))
             label_problems = tuple(
@@ -163,10 +160,15 @@ def load_assignment(root: Path) -> AssignmentDataset:
     return AssignmentDataset(
         root=resolved_root,
         classes=classes,
+        source_class_names=source_class_names,
         images=tuple(records),
         class_metadata_path=metadata_path,
         problems=tuple(problems),
     )
+
+
+def source_class_name(dataset: AssignmentDataset, class_id: int) -> str:
+    return dataset.source_class_names.get(class_id, f"Unknown source class {class_id}")
 
 
 def filter_classes(classes: tuple[ClassInfo, ...], query: str) -> tuple[ClassInfo, ...]:

@@ -13,8 +13,15 @@ def test_parse_retains_coordinate_tokens():
     assert annotation.line_index == 0
 
 
+def test_parser_accepts_any_nonnegative_source_class():
+    result = parse_label_text("9402 0.5 0.5 0.2 0.2\n")
+
+    assert result.annotations[0].class_id == 9402
+    assert result.problems == ()
+
+
 def test_parser_reports_bad_lines_without_returning_editable_annotations():
-    result = parse_label_text("89 0.5 0.5 0.2 0.2\n3 nope 0.5 0.2 0.2\n")
+    result = parse_label_text("-1 0.5 0.5 0.2 0.2\n3 nope 0.5 0.2 0.2\n")
 
     assert result.annotations == ()
     assert [problem.line_index for problem in result.problems] == [0, 1]
