@@ -1,0 +1,5 @@
+import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
+import { listCatalogs } from '../api/catalogs'
+export function CatalogListPage() { const catalogs = useQuery({ queryKey: ['catalogs'], queryFn: () => listCatalogs() }); return <section><div className="page-heading"><div><p className="eyebrow">Library</p><h1>Reference catalogs</h1></div><Link className="button button--primary" to="/catalogs/new">Upload catalog</Link></div>{catalogs.isLoading && <p>Loading catalogs…</p>}{catalogs.isError && <p role="alert">Could not load catalogs.</p>}<div className="catalog-list">{catalogs.data?.items.map((item) => <Link key={item.id} to={`/catalogs/${item.id}`} className="catalog-card">{item.preview_url && <img src={item.preview_url} alt="" loading="lazy" />}<span><b>{item.name}</b><small>{item.class_count} classes · {new Date(item.created_at).toLocaleDateString()}</small></span></Link>)}</div>{catalogs.data?.items.length === 0 && <p>No catalogs yet.</p>}</section> }
+

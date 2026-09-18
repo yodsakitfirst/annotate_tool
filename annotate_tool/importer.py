@@ -14,7 +14,7 @@ class ImportedAssignment:
     assignment_id: str
     display_name: str
     root: Path
-    class_metadata_path: Path
+    class_metadata_path: Path | None
 
 
 class AssignmentImportError(ValueError):
@@ -94,14 +94,14 @@ def _wrapper_prefix(member_names: tuple[str, ...]) -> str | None:
     return None
 
 
-def _metadata_path(dataset_root: Path) -> Path:
+def _metadata_path(dataset_root: Path) -> Path | None:
     yaml_path = dataset_root / "data.yaml"
     text_path = dataset_root / "classes.txt"
     if yaml_path.is_file():
         return yaml_path
     if text_path.is_file():
         return text_path
-    raise AssignmentImportError("archive must contain class metadata in data.yaml or classes.txt")
+    return None
 
 
 def ensure_original_backup(assignment_root: Path) -> Path:
@@ -142,7 +142,7 @@ def import_dataset(
     display_name: str,
     destination: Path,
     limits: ImportLimits,
-) -> Path:
+) -> Path | None:
     cleaned_name = display_name.strip()
     if not cleaned_name:
         raise AssignmentImportError("assignment display name is required")

@@ -119,18 +119,21 @@ def test_import_enforces_file_and_uncompressed_size_limits(tmp_path):
         )
 
 
-@pytest.mark.parametrize(
-    ("members", "message"),
-    [
-        ({"classes.txt": b"x"}, "images"),
-        ({"images/a.jpg": b"x"}, "class metadata"),
-    ],
-)
-def test_import_requires_dataset_structure(tmp_path, members, message):
-    archive = make_zip(tmp_path, members)
+def test_import_requires_images_directory(tmp_path):
+    archive = make_zip(tmp_path, {"classes.txt": b"x"})
 
-    with pytest.raises(AssignmentImportError, match=message):
+    with pytest.raises(AssignmentImportError, match="images"):
         import_assignment(archive, "Bad", AppPaths.from_root(tmp_path / "runtime"), ImportLimits())
+
+
+def test_import_accepts_missing_class_metadata(tmp_path):
+    archive = make_zip(tmp_path, {"images/a.jpg": b"x"})
+
+    imported = import_assignment(
+        archive, "No source names", AppPaths.from_root(tmp_path / "runtime"), ImportLimits()
+    )
+
+    assert imported.class_metadata_path is None
 
 
 def test_import_rejects_blank_display_name_and_removes_staging_files(tmp_path):

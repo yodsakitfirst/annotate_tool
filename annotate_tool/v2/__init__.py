@@ -1,0 +1,1 @@
+"""Version-two application infrastructure."""

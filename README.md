@@ -1,24 +1,14 @@
-# YOLO Class Review
+# Annotation Desk
 
-A small internal Streamlit web app for reviewing and correcting class IDs in existing YOLO object-detection labels. It is optimized for the repeated workflow: inspect a crop, click **Correct** or select another visual class, and move immediately to the next object.
+Annotation Desk is an internal YOLO class-review application. A React single-page interface and FastAPI API ship as one service. Teams can reuse reference catalogs across projects, click boxes directly, save one annotation at a time, and export corrected labels without changing uploaded originals.
 
-The app changes only the class token. It does not create, resize, reorder, or delete boxes. It has no authentication or automatic classification.
+There is deliberately no authentication or authorization. Every user can see and edit every project. Restrict network access at the deployment layer.
 
-## Dataset ZIP
+## Data formats
 
-An administrator creates each project once by uploading a dataset ZIP and a reference-catalog ZIP. The dataset ZIP may contain these paths directly or inside one enclosing directory:
+A dataset ZIP contains `images/`, optional matching `labels/`, and optional `classes.txt` or `data.yaml`, either at the archive root or inside one enclosing directory. Source class IDs may be any nonnegative integers; missing source names display as `Unknown source class <id>`.
 
-```text
-images/
-  image001.jpg
-labels/
-  image001.txt
-classes.txt       # or data.yaml
-```
-
-Source labels may use any nonnegative integer class ID and any number of classes. `classes.txt` uses one source name per line; `data.yaml` may use a list or sparse numeric-keyed dictionary. Missing source names display as `Unknown source class <id>` and do not prevent review.
-
-The separate reference-catalog ZIP defines the only valid output classes:
+A reusable reference catalog ZIP contains:
 
 ```text
 catalog.yaml
@@ -28,94 +18,118 @@ references/
   7.webp
 ```
 
-`catalog.yaml` contains `names: {0: Product name, 1: Another name, 7: ...}`. IDs may be sparse. Every catalog ID must have exactly one readable, numeric-named image. Different projects may use different catalogs.
+`catalog.yaml` must contain a nonempty numeric `names` mapping. IDs may be sparse. Every mapped ID needs exactly one readable numeric-named image, and no extra numeric reference image is allowed. JPG, JPEG, PNG, BMP, and WebP are supported.
 
-The ZIP importer rejects path traversal, symlinks, duplicate case-insensitive destinations, excessive file counts, and excessive expanded size.
+## Local development
 
-## Windows setup
-
-Install Python 3.11 or newer, then run from this repository:
+Python 3.12 and Node 22 are the tested versions.
 
 ```powershell
-py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\streamlit.exe run app.py --server.address 0.0.0.0 --server.port 8501
-```
-
-Annotators on the same internal network open `http://<server-ip>:8501`.
-
-## Linux setup
-
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/streamlit run app.py --server.address 0.0.0.0 --server.port 8501
-```
-
-## Persistent storage
-
-By default, imported projects, reference catalogs, backups, SQLite ownership/progress records, and working labels are stored under `./workspace`. Uploads happen once; annotators subsequently open persistent projects from the sidebar. For deployment, point the app at a persistent, backed-up location:
-
-Windows PowerShell:
-
-```powershell
-$env:ANNOTATE_TOOL_DATA_DIR = "D:\annotation-review-data"
-.\.venv\Scripts\streamlit.exe run app.py --server.address 0.0.0.0 --server.port 8501
-```
-
-Linux:
-
-```bash
-export ANNOTATE_TOOL_DATA_DIR=/srv/annotation-review-data
-.venv/bin/streamlit run app.py --server.address 0.0.0.0 --server.port 8501
-```
-
-Do not use an ephemeral directory. Schedule machine-level backups of this location; application-level atomic writes cannot protect against complete server-disk loss.
-
-## Operating rules
-
-- Enter an annotator name, then open a project assigned to that exact name. The MVP uses operational names, not security-grade authentication.
-- Assign each project to one annotator at a time. Many annotators may work concurrently on different projects.
-- Click a numbered bounding box directly in the original image to select it; previous/next navigation remains available.
-- Every Correct, relabel, or Skip decision is persisted immediately. Relabeling atomically replaces the working label file before progress is recorded.
-- The original `labels/` tree is copied once to `backups/labels_original/` during import and is never overwritten.
-- Refreshing the browser or restarting Streamlit resumes at the first unreviewed valid object.
-- A displayed object is not saved until the annotator clicks Correct, Skip, or a class card.
-- Malformed label files are read-only so that valid-looking lines inside a damaged file cannot be silently rewritten.
-
-## Export and restore
-
-Open **Export corrected labels** in the sidebar and download the ZIP. It contains:
-
-- working `labels/`;
-- `classes.txt` or `data.yaml`;
-- `progress.json`;
-- `problems.csv`.
-
-Images and original backups are excluded to keep the export small. To restore an assignment after a server problem, combine an image copy with the exported labels and class metadata, then import that dataset as a new assignment. Keep the server workspace backup if original labels must also be recovered.
-
-## Development and tests
-
-Install development requirements and run the suite:
-
-```powershell
+python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest -v
+Set-Location frontend
+npm ci
+npm run dev
 ```
 
-Generate the demonstration ZIP:
+In another terminal, from the repository root:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\create_sample_data.py
+$env:ANNOTATE_TOOL_DATA_DIR = (Resolve-Path .\workspace_v2)
+.\.venv\Scripts\python.exe -m uvicorn annotate_tool.api.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Then import both `sample_data/sample_dataset.zip` and `sample_data/sample_reference_catalog.zip`. The sample uses sparse target IDs and an unknown source ID, plus empty, missing, and malformed-label cases.
+Vite serves the development UI at `http://localhost:5173` and proxies `/api` and `/media` to FastAPI.
 
-## Troubleshooting
+To run the combined production-style service locally:
 
-- **Upload rejected for size:** `.streamlit/config.toml` allows browser uploads up to 4096 MB. Increase `server.maxUploadSize` deliberately if required. The importer separately caps expanded content at 20 GB and 25,000 files.
-- **Invalid dataset archive:** confirm the ZIP contains `images/` at its root or inside exactly one enclosing directory. Remove shortcuts, symlinks, and duplicate paths.
-- **Invalid reference catalog:** confirm `catalog.yaml` IDs match exactly one readable numeric image under `references/`.
-- **Malformed label:** inspect the file named under **Problems**. The app will not edit that label file until it is corrected and the assignment is reopened.
-- **Cannot connect from another laptop:** confirm Streamlit is running with `--server.address 0.0.0.0`, Windows Firewall or the server firewall permits TCP port 8501, and the client uses the server's internal IP address.
-- **Progress appears missing:** verify `ANNOTATE_TOOL_DATA_DIR` points to the same persistent directory used by the earlier run.
+```powershell
+Set-Location frontend
+npm ci
+npm run build
+Set-Location ..
+$env:ANNOTATE_TOOL_DATA_DIR = (New-Item -ItemType Directory -Force .\workspace_v2).FullName
+$env:PORT = "8000"
+.\.venv\Scripts\python.exe -m uvicorn annotate_tool.api.main:app --host 0.0.0.0 --port $env:PORT
+```
+
+Open `http://localhost:8000`. The health endpoint is `GET /api/v1/health`.
+
+## Tests
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m compileall -q annotate_tool scripts tests app.py
+Set-Location frontend
+npm test -- --run --no-file-parallelism --maxWorkers=1
+npm run typecheck
+npm run build
+npx playwright install chromium
+npx playwright test
+```
+
+The Python suite includes a 20-client concurrent-write test. The Playwright critical path uploads the sample catalog and dataset, clicks a box, relabels to a sparse target, navigates away and back, and downloads an export.
+
+## Legacy reference-catalog migration
+
+Only reusable reference catalogs are migrated. Legacy datasets, projects, owners, decisions, and progress are intentionally ignored and the source workspace remains untouched.
+
+```powershell
+.\.venv\Scripts\python.exe -m annotate_tool.migrations.import_legacy_catalogs `
+  --legacy-root .\workspace `
+  --target-root .\workspace_v2
+```
+
+The command fingerprints names and image contents, preserves sparse IDs, Unicode names, and image formats, and reports imported, skipped, and failed catalogs. Rerunning it is safe.
+
+## Docker
+
+Build and start the application in the background with Docker Compose:
+
+```powershell
+docker compose up --build -d
+```
+
+Open `http://localhost:8000`. Uploaded data and annotation decisions are stored in the named
+`annotation-desk-data` volume. View logs or stop the application with:
+
+```powershell
+docker compose logs -f
+docker compose down
+```
+
+Alternatively, build and run the single-service image directly:
+
+```powershell
+docker build -t annotation-desk .
+docker volume create annotation-desk-data
+docker run --rm -p 8000:8000 `
+  -e PORT=8000 `
+  -e ANNOTATE_TOOL_DATA_DIR=/data `
+  -v annotation-desk-data:/data `
+  annotation-desk
+```
+
+The multi-stage build runs frontend tests and produces fingerprinted assets before installing the pinned Python runtime dependencies. One Uvicorn process serves the API, controlled media, and SPA.
+
+## Persistence and backup
+
+`ANNOTATE_TOOL_DATA_DIR` is required for a durable deployment. Mount it on persistent storage. If it points into an ephemeral container filesystem, every uploaded catalog, project, and decision can disappear on redeploy or restart. The server logs a warning when the variable is absent; that warning does not make ephemeral storage safe.
+
+Back up the entire data directory as one unit, including `app.sqlite3`, `catalogs/`, and `projects/`. For a simple single-process deployment, stop the container or use a filesystem snapshot before copying it:
+
+```powershell
+docker stop annotation-desk
+Copy-Item -Recurse D:\annotation-desk-data D:\backups\annotation-desk-$(Get-Date -Format yyyyMMdd-HHmmss)
+```
+
+Uploaded label files and `backups/labels_original/` are immutable. Decisions live in SQLite. Exports are constructed in memory from the immutable originals and current decisions.
+
+## Deployment limits
+
+- Run exactly one application replica for this SQLite/filesystem MVP.
+- Mount one writable persistent data directory and back it up externally.
+- Restrict the service to the internal network because it has no login or permissions.
+- Configure the platform request-size and request-timeout limits for synchronous ZIP imports.
+- The hosting platform must pass `$PORT`, allow binding to `0.0.0.0`, preserve the mounted volume across restart/redeploy, and provide enough memory for ZIP validation.
+- CloudViu compatibility is not claimed until its build command, port injection, persistent volumes, upload limits, request timeouts, memory limits, and sleep/restart behavior are verified.
