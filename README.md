@@ -6,22 +6,29 @@ The app changes only the class token. It does not create, resize, reorder, or de
 
 ## Dataset ZIP
 
-Upload one ZIP per assigned annotator. The ZIP may contain these paths directly or inside one enclosing directory:
+An administrator creates each project once by uploading a dataset ZIP and a reference-catalog ZIP. The dataset ZIP may contain these paths directly or inside one enclosing directory:
 
 ```text
 images/
   image001.jpg
 labels/
   image001.txt
-references/
-  0.jpg
-  1.jpg
-  ...
-  88.jpg
 classes.txt       # or data.yaml
 ```
 
-The class mapping must contain 89 non-empty product names for IDs 0 through 88. It may optionally include `89: Needs Review` as a source-only marker; those annotations must be relabeled and the marker is not offered as a destination class. `classes.txt` uses one name per line. A YOLO-style `data.yaml` may instead provide `names` as a list or numeric-keyed dictionary. Reference image filenames must use their numeric product class ID; common JPG, PNG, BMP, and WebP formats are supported.
+Source labels may use any nonnegative integer class ID and any number of classes. `classes.txt` uses one source name per line; `data.yaml` may use a list or sparse numeric-keyed dictionary. Missing source names display as `Unknown source class <id>` and do not prevent review.
+
+The separate reference-catalog ZIP defines the only valid output classes:
+
+```text
+catalog.yaml
+references/
+  0.jpg
+  1.png
+  7.webp
+```
+
+`catalog.yaml` contains `names: {0: Product name, 1: Another name, 7: ...}`. IDs may be sparse. Every catalog ID must have exactly one readable, numeric-named image. Different projects may use different catalogs.
 
 The ZIP importer rejects path traversal, symlinks, duplicate case-insensitive destinations, excessive file counts, and excessive expanded size.
 
@@ -47,7 +54,7 @@ python3 -m venv .venv
 
 ## Persistent storage
 
-By default, imported assignments, backups, SQLite progress, and working labels are stored under `./workspace`. For deployment, point the app at a persistent, backed-up location:
+By default, imported projects, reference catalogs, backups, SQLite ownership/progress records, and working labels are stored under `./workspace`. Uploads happen once; annotators subsequently open persistent projects from the sidebar. For deployment, point the app at a persistent, backed-up location:
 
 Windows PowerShell:
 
@@ -67,7 +74,9 @@ Do not use an ephemeral directory. Schedule machine-level backups of this locati
 
 ## Operating rules
 
-- Assign each imported dataset to one annotator at a time. The MVP does not implement authentication or distributed task locking.
+- Enter an annotator name, then open a project assigned to that exact name. The MVP uses operational names, not security-grade authentication.
+- Assign each project to one annotator at a time. Many annotators may work concurrently on different projects.
+- Click a numbered bounding box directly in the original image to select it; previous/next navigation remains available.
 - Every Correct, relabel, or Skip decision is persisted immediately. Relabeling atomically replaces the working label file before progress is recorded.
 - The original `labels/` tree is copied once to `backups/labels_original/` during import and is never overwritten.
 - Refreshing the browser or restarting Streamlit resumes at the first unreviewed valid object.
@@ -100,12 +109,13 @@ Generate the demonstration ZIP:
 .\.venv\Scripts\python.exe scripts\create_sample_data.py
 ```
 
-Then import `sample_data/sample_assignment.zip` in the app. It contains two valid objects plus empty, missing, and malformed-label cases.
+Then import both `sample_data/sample_dataset.zip` and `sample_data/sample_reference_catalog.zip`. The sample uses sparse target IDs and an unknown source ID, plus empty, missing, and malformed-label cases.
 
 ## Troubleshooting
 
 - **Upload rejected for size:** `.streamlit/config.toml` allows browser uploads up to 4096 MB. Increase `server.maxUploadSize` deliberately if required. The importer separately caps expanded content at 20 GB and 25,000 files.
-- **Invalid archive:** confirm the ZIP contains `images/` and class metadata at its root or inside exactly one enclosing directory. Remove shortcuts, symlinks, and duplicate paths.
+- **Invalid dataset archive:** confirm the ZIP contains `images/` at its root or inside exactly one enclosing directory. Remove shortcuts, symlinks, and duplicate paths.
+- **Invalid reference catalog:** confirm `catalog.yaml` IDs match exactly one readable numeric image under `references/`.
 - **Malformed label:** inspect the file named under **Problems**. The app will not edit that label file until it is corrected and the assignment is reopened.
 - **Cannot connect from another laptop:** confirm Streamlit is running with `--server.address 0.0.0.0`, Windows Firewall or the server firewall permits TCP port 8501, and the client uses the server's internal IP address.
 - **Progress appears missing:** verify `ANNOTATE_TOOL_DATA_DIR` points to the same persistent directory used by the earlier run.

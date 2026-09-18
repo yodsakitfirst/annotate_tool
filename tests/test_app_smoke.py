@@ -67,6 +67,7 @@ def test_seeded_assignment_renders_review_controls(monkeypatch, tmp_path):
     assert app.selectbox[0].value == "Sample dataset · Alice"
     assert any(button.label == "✅ Correct" for button in app.button)
     assert any(button.label == "Skip" for button in app.button)
+    assert any(button.label == "Assign owner" for button in app.button)
     assert app.text_input(key="class_query").label == "Search classes"
     assert any(metric.label == "Reviewed" and metric.value == "0 / 1" for metric in app.metric)
     assert not any(button.label.startswith("Object ") for button in app.button)

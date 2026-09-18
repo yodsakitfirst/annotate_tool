@@ -152,6 +152,20 @@ with st.sidebar:
         selected_label = st.selectbox("Project", tuple(labels), index=default_index, key="project_id_label")
         selected_project = labels[selected_label]
         st.session_state.project_id = selected_project.project_id
+        with st.expander("Assign selected project"):
+            new_owner = st.text_input(
+                "New owner",
+                value=selected_project.owner_name or "",
+                key=f"owner_{selected_project.project_id}",
+            )
+            if st.button("Assign owner", width="stretch"):
+                try:
+                    repository.assign_project(selected_project.project_id, new_owner)
+                except ValueError as exc:
+                    st.error(str(exc))
+                else:
+                    st.success(f"Assigned to {new_owner.strip()}.")
+                    st.rerun()
     else:
         selected_project = None
 
