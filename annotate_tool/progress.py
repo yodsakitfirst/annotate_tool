@@ -18,6 +18,16 @@ class AssignmentRecord:
 
 
 @dataclass(frozen=True)
+class ProjectRecord:
+    project_id: str
+    display_name: str
+    dataset_root: Path
+    reference_root: Path | None
+    owner_name: str | None
+    imported_at: str
+
+
+@dataclass(frozen=True)
 class ReviewDecision:
     assignment_id: str
     image_path: str
@@ -26,6 +36,7 @@ class ReviewDecision:
     previous_class_id: int
     resulting_class_id: int | None
     decided_at: str
+    annotator_name: str | None = None
 
 
 class ProgressRepository:
@@ -82,30 +93,152 @@ class ProgressRepository:
                 );
                 """
             )
+            assignment_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(assignments)")
+            }
+            if "dataset_root" not in assignment_columns:
+                connection.execute("ALTER TABLE assignments ADD COLUMN dataset_root TEXT")
+            if "reference_root" not in assignment_columns:
+                connection.execute("ALTER TABLE assignments ADD COLUMN reference_root TEXT")
+            if "owner_name" not in assignment_columns:
+                connection.execute("ALTER TABLE assignments ADD COLUMN owner_name TEXT")
+            connection.execute(
+                "UPDATE assignments SET dataset_root = root WHERE dataset_root IS NULL"
+            )
 
-    def register_assignment(self, assignment_id: str, display_name: str, root: Path) -> None:
+            decision_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(decisions)")
+            }
+            if "annotator_name" not in decision_columns:
+                connection.execute("ALTER TABLE decisions ADD COLUMN annotator_name TEXT")
+
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS reference_classes (
+                    assignment_id TEXT NOT NULL,
+                    class_id INTEGER NOT NULL CHECK (class_id >= 0),
+                    display_name TEXT NOT NULL CHECK (length(trim(display_name)) > 0),
+                    image_path TEXT NOT NULL,
+                    display_order INTEGER NOT NULL CHECK (display_order >= 0),
+                    PRIMARY KEY (assignment_id, class_id),
+                    FOREIGN KEY (assignment_id) REFERENCES assignments(assignment_id) ON DELETE CASCADE
+                );
+                """
+            )
+            connection.execute(
+                "INSERT OR IGNORE INTO schema_version (version, applied_at) VALUES (?, ?)",
+                (1, datetime.now(timezone.utc).isoformat(timespec="microseconds")),
+            )
+
+    def register_project(
+        self,
+        project_id: str,
+        display_name: str,
+        dataset_root: Path,
+        reference_root: Path | None,
+        owner_name: str | None = None,
+    ) -> None:
         imported_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        normalized_owner = owner_name.strip() if owner_name is not None else None
+        if owner_name is not None and not normalized_owner:
+            raise ValueError("project owner name is required")
+        resolved_dataset = dataset_root.resolve()
+        resolved_references = reference_root.resolve() if reference_root is not None else None
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO assignments (assignment_id, display_name, root, imported_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO assignments (
+                    assignment_id, display_name, root, imported_at,
+                    dataset_root, reference_root, owner_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(assignment_id) DO UPDATE SET
                     display_name=excluded.display_name,
-                    root=excluded.root
+                    root=excluded.root,
+                    dataset_root=excluded.dataset_root,
+                    reference_root=excluded.reference_root,
+                    owner_name=COALESCE(excluded.owner_name, assignments.owner_name)
                 """,
-                (assignment_id, display_name, str(root.resolve()), imported_at),
+                (
+                    project_id,
+                    display_name.strip(),
+                    str(resolved_dataset),
+                    imported_at,
+                    str(resolved_dataset),
+                    str(resolved_references) if resolved_references is not None else None,
+                    normalized_owner,
+                ),
             )
 
-    def list_assignments(self) -> tuple[AssignmentRecord, ...]:
+    def assign_project(self, project_id: str, owner_name: str) -> None:
+        normalized_owner = owner_name.strip()
+        if not normalized_owner:
+            raise ValueError("project owner name is required")
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE assignments SET owner_name = ? WHERE assignment_id = ?",
+                (normalized_owner, project_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError(f"unknown project: {project_id}")
+
+    def get_project(self, project_id: str) -> ProjectRecord:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT assignment_id, display_name, COALESCE(dataset_root, root) AS dataset_root,
+                       reference_root, owner_name, imported_at
+                FROM assignments WHERE assignment_id = ?
+                """,
+                (project_id,),
+            ).fetchone()
+        if row is None:
+            raise ValueError(f"unknown project: {project_id}")
+        return ProjectRecord(
+            project_id=row["assignment_id"],
+            display_name=row["display_name"],
+            dataset_root=Path(row["dataset_root"]),
+            reference_root=Path(row["reference_root"]) if row["reference_root"] else None,
+            owner_name=row["owner_name"],
+            imported_at=row["imported_at"],
+        )
+
+    def list_projects(self) -> tuple[ProjectRecord, ...]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT assignment_id, display_name, root, imported_at "
-                "FROM assignments ORDER BY imported_at DESC, assignment_id DESC"
+                """
+                SELECT assignment_id, display_name, COALESCE(dataset_root, root) AS dataset_root,
+                       reference_root, owner_name, imported_at
+                FROM assignments ORDER BY imported_at DESC, assignment_id DESC
+                """
             ).fetchall()
         return tuple(
-            AssignmentRecord(row["assignment_id"], row["display_name"], Path(row["root"]), row["imported_at"])
+            ProjectRecord(
+                project_id=row["assignment_id"],
+                display_name=row["display_name"],
+                dataset_root=Path(row["dataset_root"]),
+                reference_root=Path(row["reference_root"]) if row["reference_root"] else None,
+                owner_name=row["owner_name"],
+                imported_at=row["imported_at"],
+            )
             for row in rows
+        )
+
+    def can_edit_project(self, project_id: str, annotator_name: str) -> bool:
+        project = self.get_project(project_id)
+        return bool(project.owner_name) and project.owner_name == annotator_name.strip()
+
+    def register_assignment(self, assignment_id: str, display_name: str, root: Path) -> None:
+        self.register_project(assignment_id, display_name, root, None)
+
+    def list_assignments(self) -> tuple[AssignmentRecord, ...]:
+        return tuple(
+            AssignmentRecord(project.project_id, project.display_name, project.dataset_root, project.imported_at)
+            for project in self.list_projects()
         )
 
     def record_decision(
@@ -116,6 +249,7 @@ class ProgressRepository:
         decision: DecisionKind,
         previous_class_id: int,
         resulting_class_id: int | None,
+        annotator_name: str | None = None,
     ) -> None:
         if decision not in {"correct", "relabel", "skip"}:
             raise ValueError(f"unsupported review decision: {decision}")
@@ -126,13 +260,14 @@ class ProgressRepository:
                     """
                     INSERT INTO decisions (
                         assignment_id, image_path, line_index, decision,
-                        previous_class_id, resulting_class_id, decided_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        previous_class_id, resulting_class_id, decided_at, annotator_name
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(assignment_id, image_path, line_index) DO UPDATE SET
                         decision=excluded.decision,
                         previous_class_id=excluded.previous_class_id,
                         resulting_class_id=excluded.resulting_class_id,
-                        decided_at=excluded.decided_at
+                        decided_at=excluded.decided_at,
+                        annotator_name=excluded.annotator_name
                     """,
                     (
                         assignment_id,
@@ -142,6 +277,7 @@ class ProgressRepository:
                         previous_class_id,
                         resulting_class_id,
                         decided_at,
+                        annotator_name.strip() if annotator_name else None,
                     ),
                 )
         except sqlite3.IntegrityError as exc:
@@ -152,7 +288,7 @@ class ProgressRepository:
             rows = connection.execute(
                 """
                 SELECT assignment_id, image_path, line_index, decision,
-                       previous_class_id, resulting_class_id, decided_at
+                       previous_class_id, resulting_class_id, decided_at, annotator_name
                 FROM decisions
                 WHERE assignment_id = ?
                 ORDER BY image_path, line_index
@@ -168,6 +304,7 @@ class ProgressRepository:
                 previous_class_id=row["previous_class_id"],
                 resulting_class_id=row["resulting_class_id"],
                 decided_at=row["decided_at"],
+                annotator_name=row["annotator_name"],
             )
             for row in rows
         )

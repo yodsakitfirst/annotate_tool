@@ -6,6 +6,7 @@ from pathlib import Path
 class AppPaths:
     root: Path
     assignments: Path
+    projects: Path
     database: Path
     staging: Path
 
@@ -15,12 +16,14 @@ class AppPaths:
         return cls(
             root=resolved,
             assignments=resolved / "assignments",
+            projects=resolved / "projects",
             database=resolved / "progress.sqlite3",
             staging=resolved / "staging",
         )
 
     def ensure(self) -> None:
         self.assignments.mkdir(parents=True, exist_ok=True)
+        self.projects.mkdir(parents=True, exist_ok=True)
         self.staging.mkdir(parents=True, exist_ok=True)
 
 
