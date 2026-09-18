@@ -3,6 +3,7 @@ import sqlite3
 
 import pytest
 
+from annotate_tool.models import ClassInfo
 from annotate_tool.progress import ProgressRepository
 
 
@@ -160,3 +161,16 @@ def test_blank_project_owner_is_rejected(tmp_path):
 
     with pytest.raises(ValueError, match="owner"):
         repository.assign_project("p1", "   ")
+
+
+def test_reference_classes_are_replaced_transactionally(tmp_path):
+    repository = ProgressRepository(tmp_path / "progress.sqlite3")
+    repository.initialize()
+    repository.register_project("p1", "Hair 001", tmp_path / "dataset", tmp_path / "references")
+    first = ClassInfo(1, "Blue", tmp_path / "references" / "images" / "1.png")
+    replacement = ClassInfo(7, "Green", tmp_path / "references" / "images" / "7.png")
+
+    repository.replace_reference_classes("p1", (first,))
+    repository.replace_reference_classes("p1", (replacement,))
+
+    assert repository.list_reference_classes("p1") == (replacement,)

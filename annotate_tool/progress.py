@@ -5,6 +5,8 @@ from pathlib import Path
 import sqlite3
 from typing import Iterator, Literal
 
+from annotate_tool.models import ClassInfo
+
 
 DecisionKind = Literal["correct", "relabel", "skip"]
 
@@ -231,6 +233,55 @@ class ProgressRepository:
     def can_edit_project(self, project_id: str, annotator_name: str) -> bool:
         project = self.get_project(project_id)
         return bool(project.owner_name) and project.owner_name == annotator_name.strip()
+
+    def replace_reference_classes(
+        self,
+        project_id: str,
+        classes: tuple[ClassInfo, ...],
+    ) -> None:
+        if any(item.reference_path is None for item in classes):
+            raise ValueError("reference classes require image paths")
+        with self._connect() as connection:
+            if connection.execute(
+                "SELECT 1 FROM assignments WHERE assignment_id = ?", (project_id,)
+            ).fetchone() is None:
+                raise ValueError(f"unknown project: {project_id}")
+            connection.execute(
+                "DELETE FROM reference_classes WHERE assignment_id = ?", (project_id,)
+            )
+            connection.executemany(
+                """
+                INSERT INTO reference_classes (
+                    assignment_id, class_id, display_name, image_path, display_order
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    (
+                        project_id,
+                        item.class_id,
+                        item.name,
+                        str(item.reference_path.resolve()),
+                        display_order,
+                    )
+                    for display_order, item in enumerate(classes)
+                ),
+            )
+
+    def list_reference_classes(self, project_id: str) -> tuple[ClassInfo, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT class_id, display_name, image_path
+                FROM reference_classes
+                WHERE assignment_id = ?
+                ORDER BY display_order, class_id
+                """,
+                (project_id,),
+            ).fetchall()
+        return tuple(
+            ClassInfo(row["class_id"], row["display_name"], Path(row["image_path"]))
+            for row in rows
+        )
 
     def register_assignment(self, assignment_id: str, display_name: str, root: Path) -> None:
         self.register_project(assignment_id, display_name, root, None)
