@@ -21,7 +21,7 @@ references/
 classes.txt       # or data.yaml
 ```
 
-The class mapping must contain exactly 89 non-empty names for IDs 0 through 88. `classes.txt` uses one name per line. A YOLO-style `data.yaml` may instead provide `names` as a list or numeric-keyed dictionary. Reference image filenames must use their numeric class ID; common JPG, PNG, BMP, and WebP formats are supported.
+The class mapping must contain 89 non-empty product names for IDs 0 through 88. It may optionally include `89: Needs Review` as a source-only marker; those annotations must be relabeled and the marker is not offered as a destination class. `classes.txt` uses one name per line. A YOLO-style `data.yaml` may instead provide `names` as a list or numeric-keyed dictionary. Reference image filenames must use their numeric product class ID; common JPG, PNG, BMP, and WebP formats are supported.
 
 The ZIP importer rejects path traversal, symlinks, duplicate case-insensitive destinations, excessive file counts, and excessive expanded size.
 

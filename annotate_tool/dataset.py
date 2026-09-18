@@ -15,6 +15,9 @@ from annotate_tool.yolo import parse_label_text
 
 
 SUPPORTED_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+PRODUCT_CLASS_COUNT = 89
+REVIEW_CLASS_ID = 89
+REVIEW_CLASS_NAME = "Needs Review"
 
 
 class DatasetLoadError(ValueError):
@@ -29,17 +32,23 @@ def _normalize_names(raw_names: Any) -> tuple[str, ...]:
             keyed_names = {int(key): value for key, value in raw_names.items()}
         except (TypeError, ValueError) as exc:
             raise DatasetLoadError("class IDs in data.yaml must be integers") from exc
-        if set(keyed_names) != set(range(89)):
-            raise DatasetLoadError("class mapping must contain exactly 89 IDs from 0 through 88")
-        names = [keyed_names[index] for index in range(89)]
+        if set(keyed_names) not in (set(range(PRODUCT_CLASS_COUNT)), set(range(PRODUCT_CLASS_COUNT + 1))):
+            raise DatasetLoadError(
+                "class mapping must contain IDs 0 through 88, optionally followed by 89: Needs Review"
+            )
+        names = [keyed_names[index] for index in range(len(keyed_names))]
     else:
         raise DatasetLoadError("class metadata must contain a names list or dictionary")
 
-    if len(names) != 89:
-        raise DatasetLoadError("class mapping must contain exactly 89 names")
+    if len(names) not in (PRODUCT_CLASS_COUNT, PRODUCT_CLASS_COUNT + 1):
+        raise DatasetLoadError(
+            "class mapping must contain 89 product names, optionally followed by Needs Review"
+        )
     normalized = tuple(str(name).strip() for name in names)
     if any(not name for name in normalized):
         raise DatasetLoadError("class names cannot be blank")
+    if len(normalized) == PRODUCT_CLASS_COUNT + 1 and normalized[REVIEW_CLASS_ID].casefold() != REVIEW_CLASS_NAME.casefold():
+        raise DatasetLoadError("class 89 must be named Needs Review")
     return normalized
 
 
@@ -118,7 +127,10 @@ def load_assignment(root: Path) -> AssignmentDataset:
 
         if label_path.is_file():
             try:
-                parsed = parse_label_text(label_path.read_text(encoding="utf-8"))
+                parsed = parse_label_text(
+                    label_path.read_text(encoding="utf-8"),
+                    expected_classes=len(names),
+                )
             except (OSError, UnicodeError) as exc:
                 parsed = ParseResult((), (AnnotationProblem(None, f"could not read label: {exc}", label_path),))
             label_problems = tuple(

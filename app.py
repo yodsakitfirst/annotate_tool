@@ -6,7 +6,13 @@ from PIL import Image
 import streamlit as st
 
 from annotate_tool.config import AppPaths, ImportLimits
-from annotate_tool.dataset import DatasetLoadError, filter_classes, load_assignment
+from annotate_tool.dataset import (
+    DatasetLoadError,
+    PRODUCT_CLASS_COUNT,
+    REVIEW_CLASS_ID,
+    filter_classes,
+    load_assignment,
+)
 from annotate_tool.importer import AssignmentImportError, import_assignment
 from annotate_tool.progress import ProgressRepository
 from annotate_tool.rendering import crop_annotation, draw_numbered_boxes, reference_placeholder
@@ -271,7 +277,13 @@ with right:
             st.image(crop_annotation(source_image, selected.annotation), width="stretch")
 
         action_columns = st.columns((2, 1))
-        if action_columns[0].button("✅ Correct", type="primary", width="stretch"):
+        needs_relabel = selected.annotation.class_id == REVIEW_CLASS_ID
+        if action_columns[0].button(
+            "✅ Correct",
+            type="primary",
+            width="stretch",
+            disabled=needs_relabel,
+        ):
             next_cursor = record_correct(
                 selected_assignment.assignment_id,
                 objects,
@@ -280,6 +292,8 @@ with right:
             )
             set_cursor(next_cursor, objects)
             st.rerun()
+        if needs_relabel:
+            st.caption("Needs Review must be changed to one of the 89 product classes.")
         if action_columns[1].button("Skip", width="stretch"):
             next_cursor = record_skip(
                 selected_assignment.assignment_id,
@@ -293,7 +307,7 @@ with right:
         st.divider()
         st.markdown("### Choose another class")
         class_query = st.text_input("Search classes", key="class_query", placeholder="Name or class ID")
-        filtered = filter_classes(dataset.classes, class_query)
+        filtered = filter_classes(dataset.classes[:PRODUCT_CLASS_COUNT], class_query)
         if not filtered:
             st.info("No classes match this search.")
         else:

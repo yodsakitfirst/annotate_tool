@@ -66,10 +66,27 @@ def test_loads_yaml_list_and_dictionary_class_formats(dataset_root, yaml_names):
     assert dataset.classes[88].name == "Product 88"
 
 
-def test_rejects_class_mapping_that_is_not_exactly_zero_through_88(dataset_root):
+def test_loads_optional_needs_review_source_class(dataset_root):
+    names = {class_id: f"Product {class_id:02d}" for class_id in range(89)}
+    names[89] = "Needs Review"
+    (dataset_root / "classes.txt").unlink()
+    (dataset_root / "data.yaml").write_text(yaml.safe_dump({"names": names}), encoding="utf-8")
+    (dataset_root / "labels" / "a.txt").write_text(
+        "89 0.5 0.5 0.2 0.2\n",
+        encoding="utf-8",
+    )
+
+    dataset = load_assignment(dataset_root)
+
+    assert dataset.classes[89].name == "Needs Review"
+    assert dataset.images[0].parse_result.annotations[0].class_id == 89
+    assert dataset.images[0].parse_result.problems == ()
+
+
+def test_rejects_incomplete_class_mapping(dataset_root):
     (dataset_root / "classes.txt").write_text("Only one\n", encoding="utf-8")
 
-    with pytest.raises(DatasetLoadError, match="exactly 89"):
+    with pytest.raises(DatasetLoadError):
         load_assignment(dataset_root)
 
 
