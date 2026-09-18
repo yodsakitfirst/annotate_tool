@@ -8,7 +8,9 @@ from pathlib import Path
 import re
 import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile
+import yaml
 
+from annotate_tool.models import ClassInfo
 from annotate_tool.progress import ProgressRepository
 from annotate_tool.yolo import replace_class_token
 
@@ -81,6 +83,7 @@ def build_export(
     assignment_id: str,
     assignment_root: Path,
     repository: ProgressRepository,
+    reference_classes: tuple[ClassInfo, ...] = (),
 ) -> ExportResult:
     root = assignment_root.resolve()
     output = BytesIO()
@@ -96,6 +99,20 @@ def build_export(
             metadata = root / "classes.txt"
         if metadata.is_file():
             archive.write(metadata, metadata.name)
+
+        if reference_classes:
+            archive.writestr(
+                "reference_catalog.yaml",
+                yaml.safe_dump(
+                    {
+                        "names": {
+                            item.class_id: item.name for item in reference_classes
+                        }
+                    },
+                    sort_keys=True,
+                    allow_unicode=True,
+                ),
+            )
 
         archive.writestr("progress.json", _progress_json(assignment_id, repository))
         archive.writestr("problems.csv", _problems_csv(assignment_id, repository))

@@ -4,7 +4,9 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
+import yaml
 
+from annotate_tool.models import ClassInfo
 from annotate_tool.progress import ProgressRepository
 from annotate_tool.storage import atomic_relabel, build_export
 
@@ -113,3 +115,24 @@ def test_export_includes_data_yaml_when_classes_text_is_absent(tmp_path):
 
     with ZipFile(BytesIO(result.content)) as archive:
         assert "data.yaml" in archive.namelist()
+
+
+def test_export_includes_reference_catalog_metadata_without_reference_images(tmp_path):
+    assignment_id, root, repository = make_assignment(tmp_path)
+    reference_classes = (
+        ClassInfo(1, "Blue", root / "references" / "1.png"),
+        ClassInfo(7, "Green", root / "references" / "7.png"),
+    )
+
+    result = build_export(
+        assignment_id,
+        root,
+        repository,
+        reference_classes=reference_classes,
+    )
+
+    with ZipFile(BytesIO(result.content)) as archive:
+        names = archive.namelist()
+        catalog = yaml.safe_load(archive.read("reference_catalog.yaml"))
+    assert catalog == {"names": {1: "Blue", 7: "Green"}}
+    assert not any(name.startswith("references/") for name in names)

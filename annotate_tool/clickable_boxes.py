@@ -60,12 +60,14 @@ export default function(component) {
 """
 
 
-clickable_box_image = st.components.v2.component(
-    "clickable_box_image",
-    html=COMPONENT_HTML,
-    css=COMPONENT_CSS,
-    js=COMPONENT_JS,
-)
+def clickable_box_image(**mount_arguments):
+    renderer = st.components.v2.component(
+        "clickable_box_image",
+        html=COMPONENT_HTML,
+        css=COMPONENT_CSS,
+        js=COMPONENT_JS,
+    )
+    return renderer(**mount_arguments)
 
 
 def build_clickable_image_payload(

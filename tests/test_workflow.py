@@ -135,3 +135,25 @@ def test_flattening_and_navigation_cross_image_boundaries(dataset_root):
     assert move_cursor(ReviewCursor(1, False), objects, 1) == ReviewCursor(2, False)
     assert move_cursor(ReviewCursor(2, False), objects, 1) == ReviewCursor(2, False)
     assert move_cursor(ReviewCursor(0, False), objects, -1) == ReviewCursor(0, False)
+
+
+def test_non_owner_cannot_relabel(workflow_fixture):
+    repository = workflow_fixture["repository"]
+    repository.assign_project(workflow_fixture["dataset_id"], "Alice")
+
+    with pytest.raises(PermissionError, match="assigned to Alice"):
+        record_relabel(
+            new_class_id=8,
+            annotator_name="Bob",
+            allowed_class_ids={8},
+            **action_args(workflow_fixture),
+        )
+
+
+def test_correct_rejects_source_id_outside_reference_catalog(workflow_fixture):
+    with pytest.raises(ValueError, match="reference catalog"):
+        record_correct(
+            annotator_name=None,
+            allowed_class_ids={17},
+            **action_args(workflow_fixture),
+        )

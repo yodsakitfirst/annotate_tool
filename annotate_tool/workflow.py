@@ -70,6 +70,19 @@ def _selected(objects: tuple[ObjectKey, ...], cursor: ReviewCursor) -> tuple[int
     return cursor.object_index, objects[cursor.object_index]
 
 
+def _require_project_owner(
+    dataset_id: str,
+    repository: ProgressRepository,
+    annotator_name: str | None,
+) -> None:
+    if annotator_name is None:
+        return
+    project = repository.get_project(dataset_id)
+    if project.owner_name != annotator_name.strip():
+        owner = project.owner_name or "no annotator"
+        raise PermissionError(f"project is assigned to {owner}")
+
+
 def _next_unreviewed(
     dataset_id: str,
     objects: tuple[ObjectKey, ...],
@@ -95,8 +108,15 @@ def record_correct(
     objects: tuple[ObjectKey, ...],
     cursor: ReviewCursor,
     repository: ProgressRepository,
+    annotator_name: str | None = None,
+    allowed_class_ids: Collection[int] | None = None,
 ) -> ReviewCursor:
+    _require_project_owner(dataset_id, repository, annotator_name)
     current_index, item = _selected(objects, cursor)
+    if allowed_class_ids is not None and item.annotation.class_id not in frozenset(allowed_class_ids):
+        raise ValueError(
+            f"class ID {item.annotation.class_id} is not in the project reference catalog"
+        )
     repository.record_decision(
         dataset_id,
         item.image_path,
@@ -104,6 +124,7 @@ def record_correct(
         "correct",
         item.annotation.class_id,
         item.annotation.class_id,
+        annotator_name=annotator_name,
     )
     return _next_unreviewed(dataset_id, objects, current_index, repository)
 
@@ -115,14 +136,16 @@ def record_relabel(
     repository: ProgressRepository,
     new_class_id: int,
     allowed_class_ids: Collection[int] | None = None,
+    annotator_name: str | None = None,
 ) -> ReviewCursor:
+    _require_project_owner(dataset_id, repository, annotator_name)
     current_index, item = _selected(objects, cursor)
     atomic_relabel(
         item.label_path,
         item.line_index,
         item.annotation.original_line,
         new_class_id,
-        allowed_class_ids,
+        allowed_class_ids=allowed_class_ids,
     )
     repository.record_decision(
         dataset_id,
@@ -131,6 +154,7 @@ def record_relabel(
         "relabel",
         item.annotation.class_id,
         new_class_id,
+        annotator_name=annotator_name,
     )
     return _next_unreviewed(dataset_id, objects, current_index, repository)
 
@@ -140,7 +164,9 @@ def record_skip(
     objects: tuple[ObjectKey, ...],
     cursor: ReviewCursor,
     repository: ProgressRepository,
+    annotator_name: str | None = None,
 ) -> ReviewCursor:
+    _require_project_owner(dataset_id, repository, annotator_name)
     current_index, item = _selected(objects, cursor)
     repository.record_decision(
         dataset_id,
@@ -149,6 +175,7 @@ def record_skip(
         "skip",
         item.annotation.class_id,
         None,
+        annotator_name=annotator_name,
     )
     return _next_unreviewed(
         dataset_id,
