@@ -100,20 +100,20 @@ def ensure_original_backup(assignment_root: Path) -> Path:
     except FileExistsError as exc:
         raise AssignmentImportError("original-label backup is already being created") from exc
 
-    temporary = backups / f".labels_original_{uuid.uuid4().hex}"
     try:
         if destination.exists():
             raise AssignmentImportError("incomplete original-label backup already exists")
         if labels.is_dir():
-            shutil.copytree(labels, temporary)
+            shutil.copytree(labels, destination)
         else:
-            temporary.mkdir()
-        os.replace(temporary, destination)
+            destination.mkdir()
         marker.write_text("complete\n", encoding="utf-8")
         return destination
+    except Exception:
+        if destination.exists() and not marker.exists():
+            shutil.rmtree(destination)
+        raise
     finally:
-        if temporary.exists():
-            shutil.rmtree(temporary)
         lock.unlink(missing_ok=True)
 
 

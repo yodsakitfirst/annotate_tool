@@ -126,3 +126,17 @@ def test_existing_backup_is_never_overwritten(tmp_path):
 
     assert second == backup
     assert (backup / "a.txt").read_text(encoding="utf-8").startswith("1 ")
+
+
+def test_backup_succeeds_when_windows_denies_directory_renames(tmp_path, monkeypatch):
+    assignment = create_assignment_tree(tmp_path)
+
+    def deny_directory_rename(source, destination):
+        raise PermissionError(5, "Access is denied", str(source), str(destination))
+
+    monkeypatch.setattr("annotate_tool.importer.os.replace", deny_directory_rename)
+
+    backup = ensure_original_backup(assignment)
+
+    assert (backup / "a.txt").read_text(encoding="utf-8") == "1 0.5 0.5 0.2 0.2\n"
+    assert (assignment / "backups" / ".backup_complete").is_file()
