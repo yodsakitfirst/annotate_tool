@@ -396,7 +396,11 @@ Do not solve hypothetical scaling beyond this with PostgreSQL yet. If the concur
 
 ## Error handling and data integrity
 
+<<<<<<< HEAD
 - Validate all IDs and resource relationships server-side even though there is no authentication; for example, confirm that an annotation belongs to the requested image/project and that a target class belongs to the project's catalog.
+=======
+- Validate all IDs and ownership relationships server-side even though there is no authentication.
+>>>>>>> b7cbf6d3c4c1dd9ead85893e219349e3e7496daa
 - Reject path traversal, symlinks, duplicate case-insensitive archive destinations, oversized uploads, too many files, and excessive expanded archive size using the existing importer protections.
 - Never accept a filesystem path from the browser as an authoritative storage path.
 - Original uploads and original label backups remain immutable after successful import.
