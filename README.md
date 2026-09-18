@@ -84,7 +84,21 @@ The command fingerprints names and image contents, preserves sparse IDs, Unicode
 
 ## Docker
 
-Build and run the single-service image:
+Build and start the application in the background with Docker Compose:
+
+```powershell
+docker compose up --build -d
+```
+
+Open `http://localhost:8000`. Uploaded data and annotation decisions are stored in the named
+`annotation-desk-data` volume. View logs or stop the application with:
+
+```powershell
+docker compose logs -f
+docker compose down
+```
+
+Alternatively, build and run the single-service image directly:
 
 ```powershell
 docker build -t annotation-desk .

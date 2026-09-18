@@ -1,0 +1,17 @@
+services:
+  app:
+    build:
+      context: .
+    image: annotation-desk
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      ANNOTATE_TOOL_DATA_DIR: /data
+    volumes:
+      - annotation-desk-data:/data
+    restart: unless-stopped
+
+volumes:
+  annotation-desk-data:
+    name: annotation-desk-data
