@@ -52,6 +52,32 @@ def test_import_accepts_single_wrapper_directory(tmp_path):
     assert (imported.root / "backups" / "labels_original" / "a.txt").read_bytes().startswith(b"1 ")
 
 
+def test_import_succeeds_when_windows_denies_directory_renames(tmp_path, monkeypatch):
+    archive = make_zip(
+        tmp_path,
+        {
+            "batch/images/a.jpg": b"image-bytes",
+            "batch/labels/a.txt": b"1 0.5 0.5 0.2 0.2\n",
+            "batch/classes.txt": classes_text().encode(),
+        },
+    )
+
+    def deny_directory_rename(source, destination):
+        raise PermissionError(5, "Access is denied", str(source), str(destination))
+
+    monkeypatch.setattr("annotate_tool.importer.os.replace", deny_directory_rename)
+
+    imported = import_assignment(
+        archive,
+        "Alice batch",
+        AppPaths.from_root(tmp_path / "runtime"),
+        ImportLimits(),
+    )
+
+    assert (imported.root / "images" / "a.jpg").read_bytes() == b"image-bytes"
+    assert (imported.root / "backups" / "labels_original" / "a.txt").is_file()
+
+
 @pytest.mark.parametrize("member", ["../escape.txt", "/absolute.txt", "C:/drive.txt"])
 def test_import_rejects_unsafe_paths(tmp_path, member):
     archive = make_zip(tmp_path, {member: b"bad"})

@@ -74,6 +74,26 @@ def _dataset_root(extraction_root: Path) -> Path:
     raise AssignmentImportError("archive must contain an images directory")
 
 
+def _wrapper_prefix(member_names: tuple[str, ...]) -> str | None:
+    paths = [PurePosixPath(name) for name in member_names]
+    if any(path.parts[0].casefold() == "images" for path in paths):
+        return None
+
+    first_parts = {path.parts[0] for path in paths}
+    if len(first_parts) != 1:
+        return None
+
+    candidate = next(iter(first_parts))
+    if any(
+        len(path.parts) > 1
+        and path.parts[0] == candidate
+        and path.parts[1].casefold() == "images"
+        for path in paths
+    ):
+        return candidate
+    return None
+
+
 def _metadata_path(dataset_root: Path) -> Path:
     yaml_path = dataset_root / "data.yaml"
     text_path = dataset_root / "classes.txt"
@@ -127,13 +147,13 @@ def import_assignment(
     if not cleaned_name:
         raise AssignmentImportError("assignment display name is required")
 
-    inspect_archive(zip_path, limits)
+    member_names = inspect_archive(zip_path, limits)
     paths.ensure()
     assignment_id = uuid.uuid4().hex
-    staging_root = paths.staging / assignment_id
-    extraction_root = staging_root / "payload"
     final_root = paths.assignments / assignment_id
-    extraction_root.mkdir(parents=True)
+    wrapper_prefix = _wrapper_prefix(member_names)
+    final_root.mkdir()
+    imported = False
 
     try:
         with ZipFile(zip_path) as archive:
@@ -141,17 +161,22 @@ def import_assignment(
                 if info.is_dir():
                     continue
                 relative = _safe_member_path(info.filename)
-                destination = extraction_root.joinpath(*relative.parts)
+                relative_parts = relative.parts
+                if wrapper_prefix is not None and relative_parts[0] == wrapper_prefix:
+                    relative_parts = relative_parts[1:]
+                if not relative_parts:
+                    continue
+                destination = final_root.joinpath(*relative_parts)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 with archive.open(info) as source, destination.open("wb") as output:
                     shutil.copyfileobj(source, output)
 
-        dataset_root = _dataset_root(extraction_root)
+        dataset_root = _dataset_root(final_root)
         metadata = _metadata_path(dataset_root)
         (dataset_root / "source_name.txt").write_text(f"{cleaned_name}\n", encoding="utf-8")
         ensure_original_backup(dataset_root)
         metadata_name = metadata.relative_to(dataset_root)
-        os.replace(dataset_root, final_root)
+        imported = True
         return ImportedAssignment(
             assignment_id=assignment_id,
             display_name=cleaned_name,
@@ -163,5 +188,5 @@ def import_assignment(
     except (BadZipFile, OSError) as exc:
         raise AssignmentImportError(f"could not import assignment: {exc}") from exc
     finally:
-        if staging_root.exists():
-            shutil.rmtree(staging_root)
+        if not imported and final_root.exists():
+            shutil.rmtree(final_root)
