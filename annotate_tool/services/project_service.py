@@ -4,7 +4,12 @@ import shutil
 import uuid
 
 from annotate_tool.config import ImportLimits
-from annotate_tool.dataset import DatasetLoadError, load_assignment, source_class_name
+from annotate_tool.dataset import (
+    DatasetLoadError,
+    DatasetStorageError,
+    load_assignment,
+    source_class_name,
+)
 from annotate_tool.importer import AssignmentImportError, AssignmentStorageError, import_dataset
 from annotate_tool.repositories.catalogs import CatalogRepository
 from annotate_tool.repositories.projects import ProjectRepository, ProjectSummary
@@ -95,7 +100,7 @@ class ProjectService:
                 problems=problems,
             )
             return self.projects.get(project_id)
-        except AssignmentStorageError as exc:
+        except (AssignmentStorageError, DatasetStorageError) as exc:
             raise ProjectStorageError("Project storage operation failed") from exc
         except (AssignmentImportError, DatasetLoadError) as exc:
             raise ProjectImportError(str(exc)) from exc

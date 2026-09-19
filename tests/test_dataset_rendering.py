@@ -5,7 +5,12 @@ import pytest
 import yaml
 
 import annotate_tool.dataset as dataset_module
-from annotate_tool.dataset import DatasetLoadError, filter_classes, load_assignment
+from annotate_tool.dataset import (
+    DatasetLoadError,
+    DatasetStorageError,
+    filter_classes,
+    load_assignment,
+)
 from annotate_tool.rendering import crop_annotation, draw_numbered_boxes, reference_placeholder
 
 
@@ -140,3 +145,51 @@ def test_missing_empty_malformed_and_corrupt_items_become_problems(dataset_root)
     assert any("could not open image" in message for message in messages)
     empty = next(record for record in dataset.images if record.path.name == "empty.jpg")
     assert empty.parse_result.annotations == ()
+
+
+def test_metadata_filesystem_failure_is_path_free_storage_error(
+    dataset_root, monkeypatch
+):
+    secret = r"C:\private\server\staging\secret\data.yaml"
+    (dataset_root / "classes.txt").unlink()
+    (dataset_root / "data.yaml").write_text("names: [One]\n", encoding="utf-8")
+    original_read_text = Path.read_text
+
+    def fail_metadata_read(path, *args, **kwargs):
+        if path.name == "data.yaml":
+            raise OSError(secret)
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_metadata_read)
+
+    with pytest.raises(DatasetStorageError) as failure:
+        load_assignment(dataset_root)
+
+    assert secret not in str(failure.value)
+
+
+def test_image_and_label_problems_do_not_expose_filesystem_details(
+    dataset_root, monkeypatch
+):
+    secret_image = r"C:\private\server\staging\secret\image.jpg"
+    secret_label = r"C:\private\server\staging\secret\label.txt"
+    original_read_text = Path.read_text
+
+    def fail_image_open(*_args, **_kwargs):
+        raise OSError(secret_image)
+
+    def fail_label_read(path, *args, **kwargs):
+        if path.parent.name == "labels":
+            raise OSError(secret_label)
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(dataset_module.Image, "open", fail_image_open)
+    monkeypatch.setattr(Path, "read_text", fail_label_read)
+
+    dataset = load_assignment(dataset_root)
+    messages = [problem.message for problem in dataset.problems]
+
+    assert "could not open image" in messages
+    assert any(message.endswith("could not read label") for message in messages)
+    assert secret_image not in " ".join(messages)
+    assert secret_label not in " ".join(messages)

@@ -141,6 +141,35 @@ docker compose logs --tail=100 app
 
 The update does not delete or replace `./annotation-data`. If the new version fails its health check, stop it, check out the previously deployed Git revision, rebuild, start it with the same data directory, and verify health. Restore the pre-update backup only when the data itself must be rolled back.
 
+### One-time migration from the previous named volume
+
+Revisions before `feat/internal-deployment` used the Docker volume `annotation-desk-data` instead of `./annotation-data`. Migrating without copying that volume starts an empty application even though the old data still exists. Perform this once, with the service stopped:
+
+```bash
+cd /opt/annotation-desk/annotation-desk
+docker compose down
+mkdir -p annotation-data backups
+test -z "$(find ./annotation-data -mindepth 1 -maxdepth 1 -print -quit)"
+docker volume inspect annotation-desk-data >/dev/null
+docker run --rm \
+  -v annotation-desk-data:/source:ro \
+  -v "$(pwd)/annotation-data:/destination" \
+  alpine:3.20 \
+  sh -eu -c 'test -f /source/app.sqlite3; cp -a /source/. /destination/'
+docker compose up -d --build
+curl --fail http://127.0.0.1:8000/api/v1/health
+```
+
+Open the application and verify existing catalogs, projects, progress, annotation decisions, and an export. Then create a backup of the new bind-mounted directory:
+
+```bash
+docker compose down
+./scripts/backup.sh ./annotation-data ./backups
+docker compose up -d
+```
+
+Keep the `annotation-desk-data` volume until the migrated service and external backup have both been verified. The migration intentionally does not delete it.
+
 ## Container-replacement persistence smoke test
 
 Perform this before the first production launch and after changing storage configuration:

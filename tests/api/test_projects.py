@@ -1,5 +1,6 @@
 import logging
 
+from annotate_tool.dataset import DatasetStorageError
 from annotate_tool.services.project_service import ProjectStorageError
 from tests.api.conftest import dataset_bytes
 from tests.api.test_catalogs import upload_catalog
@@ -93,6 +94,26 @@ def test_project_archive_read_failure_is_not_reported_as_validation_detail(
         raise OSError(secret)
 
     monkeypatch.setattr("annotate_tool.importer.inspect_archive", fail_inspection)
+
+    response = create_project(api_client, catalog_id)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["message"] == "Project storage is unavailable"
+    assert secret not in response.text
+
+
+def test_project_metadata_read_failure_is_not_reported_as_validation_detail(
+    api_client, monkeypatch
+):
+    catalog_id = upload_catalog(api_client).json()["id"]
+    secret = r"C:\private\server\staging\secret\data.yaml"
+    failure = DatasetStorageError("could not access dataset metadata")
+    failure.__cause__ = OSError(secret)
+
+    def fail_load(*_args):
+        raise failure
+
+    monkeypatch.setattr("annotate_tool.services.project_service.load_assignment", fail_load)
 
     response = create_project(api_client, catalog_id)
 

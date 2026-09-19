@@ -24,6 +24,10 @@ class DatasetLoadError(ValueError):
     pass
 
 
+class DatasetStorageError(DatasetLoadError):
+    pass
+
+
 def _normalize_names(raw_names: Any) -> dict[int, str]:
     if isinstance(raw_names, list):
         keyed_names = dict(enumerate(raw_names))
@@ -49,16 +53,20 @@ def _load_class_names(root: Path) -> tuple[dict[int, str], Path | None]:
     if yaml_path.is_file():
         try:
             data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, yaml.YAMLError) as exc:
-            raise DatasetLoadError(f"could not read data.yaml: {exc}") from exc
+        except OSError as exc:
+            raise DatasetStorageError("could not access dataset metadata") from exc
+        except (UnicodeError, yaml.YAMLError) as exc:
+            raise DatasetLoadError("could not read data.yaml") from exc
         if not isinstance(data, dict) or "names" not in data:
             raise DatasetLoadError("data.yaml must contain a names field")
         return _normalize_names(data["names"]), yaml_path
     if text_path.is_file():
         try:
             names = text_path.read_text(encoding="utf-8").splitlines()
-        except (OSError, UnicodeError) as exc:
-            raise DatasetLoadError(f"could not read classes.txt: {exc}") from exc
+        except OSError as exc:
+            raise DatasetStorageError("could not access dataset metadata") from exc
+        except UnicodeError as exc:
+            raise DatasetLoadError("could not read classes.txt") from exc
         return _normalize_names(names), text_path
     return {}, None
 
@@ -122,14 +130,16 @@ def load_assignment(
             with Image.open(image_path) as image:
                 image_size = image.size
         except (OSError, UnidentifiedImageError) as exc:
-            image_error = f"could not open image: {exc}"
+            image_error = "could not open image"
             problems.append(AnnotationProblem(None, image_error, image_path))
 
         if label_path.is_file():
             try:
                 parsed = parse_label_text(label_path.read_text(encoding="utf-8"))
             except (OSError, UnicodeError) as exc:
-                parsed = ParseResult((), (AnnotationProblem(None, f"could not read label: {exc}", label_path),))
+                parsed = ParseResult(
+                    (), (AnnotationProblem(None, "could not read label", label_path),)
+                )
             label_problems = tuple(
                 AnnotationProblem(
                     problem.line_index,

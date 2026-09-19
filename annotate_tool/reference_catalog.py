@@ -81,7 +81,7 @@ def _inspect_catalog(zip_path: Path, limits: ImportLimits) -> tuple[dict[int, st
                         image.verify()
                 except (OSError, UnidentifiedImageError) as exc:
                     raise ReferenceCatalogError(
-                        f"unreadable reference image for class {class_id}: {exc}"
+                        f"unreadable reference image for class {class_id}"
                     ) from exc
             return names, images
     except AssignmentStorageError as exc:
@@ -128,8 +128,10 @@ def load_reference_catalog(root: Path) -> tuple[ReferenceClass, ...]:
     image_root = root / "images"
     try:
         names = _catalog_names(yaml.safe_load(catalog_path.read_text(encoding="utf-8")))
-    except (OSError, UnicodeError, yaml.YAMLError) as exc:
-        raise ReferenceCatalogError(f"could not read reference catalog: {exc}") from exc
+    except OSError as exc:
+        raise ReferenceCatalogStorageError("could not access reference catalog") from exc
+    except (UnicodeError, yaml.YAMLError) as exc:
+        raise ReferenceCatalogError("could not read reference catalog") from exc
     if not image_root.is_dir():
         raise ReferenceCatalogError("reference catalog images directory is missing")
     image_paths: dict[int, Path] = {}
@@ -152,6 +154,8 @@ def load_reference_catalog(root: Path) -> tuple[ReferenceClass, ...]:
             with Image.open(image_path) as image:
                 image.verify()
         except (OSError, UnidentifiedImageError) as exc:
-            raise ReferenceCatalogError(f"unreadable reference image for class {class_id}: {exc}") from exc
+            raise ReferenceCatalogError(
+                f"unreadable reference image for class {class_id}"
+            ) from exc
         classes.append(ReferenceClass(class_id, name, image_path))
     return tuple(classes)

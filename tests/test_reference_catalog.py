@@ -9,6 +9,7 @@ import yaml
 from annotate_tool.config import ImportLimits
 from annotate_tool.reference_catalog import (
     ReferenceCatalogError,
+    ReferenceCatalogStorageError,
     import_reference_catalog,
     load_reference_catalog,
 )
@@ -112,3 +113,47 @@ def test_docx_converter_maps_table_cells_row_major(tmp_path):
     assert len(reference_names) == 89
     assert "references/0.png" in reference_names
     assert "references/88.png" in reference_names
+
+
+def test_catalog_metadata_filesystem_failure_is_path_free_storage_error(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "references"
+    import_reference_catalog(
+        make_catalog_zip(tmp_path, {1: "Blue"}), root, ImportLimits()
+    )
+    secret = "/private/server/staging/secret/catalog.yaml"
+    original_read_text = Path.read_text
+
+    def fail_catalog_read(path, *args, **kwargs):
+        if path.name == "catalog.yaml":
+            raise OSError(secret)
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", fail_catalog_read)
+
+    with pytest.raises(ReferenceCatalogStorageError) as failure:
+        load_reference_catalog(root)
+
+    assert secret not in str(failure.value)
+
+
+def test_catalog_image_error_does_not_expose_filesystem_details(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "references"
+    import_reference_catalog(
+        make_catalog_zip(tmp_path, {1: "Blue"}), root, ImportLimits()
+    )
+    secret = "/private/server/staging/secret/1.png"
+
+    def fail_image_open(*_args, **_kwargs):
+        raise OSError(secret)
+
+    monkeypatch.setattr("annotate_tool.reference_catalog.Image.open", fail_image_open)
+
+    with pytest.raises(ReferenceCatalogError) as failure:
+        load_reference_catalog(root)
+
+    assert "unreadable reference image for class 1" in str(failure.value)
+    assert secret not in str(failure.value)

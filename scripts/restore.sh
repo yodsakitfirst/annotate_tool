@@ -41,6 +41,18 @@ while IFS= read -r member; do
     esac
 done < "$members"
 
+if ! tar -tvzf "$archive" | awk '
+    {
+        entry_type = substr($1, 1, 1)
+        if (entry_type != "-" && entry_type != "d") {
+            exit 1
+        }
+    }
+'; then
+    echo "archive contains unsupported archive entry" >&2
+    exit 1
+fi
+
 tar -C "$temporary" -xzf "$archive"
 [ -f "$temporary/app.sqlite3" ] || {
     echo "backup does not contain app.sqlite3" >&2

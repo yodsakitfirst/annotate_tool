@@ -14,17 +14,19 @@ REPOSITORY_ROOT = Path(__file__).parents[1]
 
 
 def _bash_executable() -> str | None:
+    if os.name == "nt":
+        git_bash = Path(r"C:\Program Files\Git\usr\bin\bash.exe")
+        return str(git_bash) if git_bash.is_file() else None
     discovered = shutil.which("bash")
     if discovered:
         return discovered
-    git_bash = Path(r"C:\Program Files\Git\usr\bin\bash.exe")
-    return str(git_bash) if git_bash.is_file() else None
+    return None
 
 
 BASH = _bash_executable()
 pytestmark = pytest.mark.skipif(
-    os.name == "nt" or BASH is None,
-    reason="deployment scripts require a POSIX host",
+    BASH is None,
+    reason="POSIX shell is unavailable",
 )
 
 
@@ -137,3 +139,22 @@ def test_restore_rejects_parent_traversal_before_creating_target(deployment_tmp_
     assert result.returncode != 0
     assert not target.exists()
     assert not (deployment_tmp_path / "outside").exists()
+
+
+@pytest.mark.parametrize("entry_type", [tarfile.SYMTYPE, tarfile.LNKTYPE])
+def test_restore_rejects_link_entries_before_extraction(
+    deployment_tmp_path, entry_type
+):
+    archive = deployment_tmp_path / "linked.tar.gz"
+    with tarfile.open(archive, "w:gz") as output:
+        member = tarfile.TarInfo("app.sqlite3")
+        member.type = entry_type
+        member.linkname = "/outside/app.sqlite3"
+        output.addfile(member)
+    target = deployment_tmp_path / "restored"
+
+    result = run_script("restore.sh", archive, target)
+
+    assert result.returncode != 0
+    assert "unsupported archive entry" in result.stderr
+    assert not target.exists()
