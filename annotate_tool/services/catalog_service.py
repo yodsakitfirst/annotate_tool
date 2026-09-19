@@ -4,13 +4,21 @@ import shutil
 import uuid
 
 from annotate_tool.config import ImportLimits
-from annotate_tool.reference_catalog import ReferenceCatalogError, import_reference_catalog
+from annotate_tool.reference_catalog import (
+    ReferenceCatalogError,
+    ReferenceCatalogStorageError,
+    import_reference_catalog,
+)
 from annotate_tool.repositories.catalogs import CatalogRecord, CatalogRepository
 from annotate_tool.v2.config import V2Paths
 from annotate_tool.v2.filesystem import publish_directory
 
 
 class CatalogImportError(ValueError):
+    pass
+
+
+class CatalogStorageError(RuntimeError):
     pass
 
 
@@ -46,8 +54,12 @@ class CatalogService:
                 created_at=created_at,
             )
             return self.repository.get(catalog_id)
+        except ReferenceCatalogStorageError as exc:
+            raise CatalogStorageError("Catalog storage operation failed") from exc
         except ReferenceCatalogError as exc:
             raise CatalogImportError(str(exc)) from exc
+        except OSError as exc:
+            raise CatalogStorageError("Catalog storage operation failed") from exc
         finally:
             if staged_root.exists():
                 shutil.rmtree(staged_root)

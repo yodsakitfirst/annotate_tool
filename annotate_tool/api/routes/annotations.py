@@ -1,3 +1,6 @@
+import logging
+import sqlite3
+
 from fastapi import APIRouter, Depends
 
 from annotate_tool.api.dependencies import AppContext, get_context
@@ -7,6 +10,7 @@ from annotate_tool.services.annotation_service import AnnotationNotFoundError, I
 
 
 router = APIRouter()
+logger = logging.getLogger("annotate_tool")
 
 
 @router.patch("/annotations/{annotation_id}", response_model=AnnotationUpdateResponse)
@@ -22,6 +26,11 @@ def update_annotation(annotation_id: str, payload: AnnotationUpdateRequest, cont
         raise ApiError(404, "annotation_not_found", "Annotation not found") from exc
     except InvalidTargetClassError as exc:
         raise ApiError(422, "target_class_invalid", str(exc)) from exc
+    except (sqlite3.Error, OSError) as exc:
+        logger.exception("Annotation write failed")
+        raise ApiError(
+            503, "annotation_write_failed", "Annotation could not be saved"
+        ) from exc
     return AnnotationUpdateResponse(
         id=item.id, image_id=item.image_id, line_index=item.line_index,
         source_class_id=item.source_class_id, current_class_id=item.current_class_id,

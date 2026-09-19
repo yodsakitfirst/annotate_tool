@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
@@ -7,10 +8,11 @@ from annotate_tool.api.errors import ApiError
 from annotate_tool.api.routes.catalogs import save_upload
 from annotate_tool.api.schemas.projects import ProjectListResponse, ProjectResponse
 from annotate_tool.repositories.projects import ProjectSummary
-from annotate_tool.services.project_service import ProjectImportError
+from annotate_tool.services.project_service import ProjectImportError, ProjectStorageError
 
 
 router = APIRouter()
+logger = logging.getLogger("annotate_tool")
 
 
 def project_response(item: ProjectSummary) -> ProjectResponse:
@@ -38,7 +40,18 @@ def create_project(name: str = Form(...), catalog_id: str = Form(...), dataset_z
         except LookupError as exc:
             raise ApiError(404, "catalog_not_found", "Catalog not found") from exc
         except ProjectImportError as exc:
+            logger.warning("Project import rejected")
             raise ApiError(422, "project_invalid", str(exc)) from exc
+        except ProjectStorageError as exc:
+            logger.exception("Project import storage failure")
+            raise ApiError(
+                503, "storage_unavailable", "Project storage is unavailable"
+            ) from exc
+    except OSError as exc:
+        logger.exception("Project upload storage failure")
+        raise ApiError(
+            503, "storage_unavailable", "Project storage is unavailable"
+        ) from exc
     finally:
         upload_path.unlink(missing_ok=True)
 

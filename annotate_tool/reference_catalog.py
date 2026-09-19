@@ -8,7 +8,11 @@ import yaml
 
 from annotate_tool.config import ImportLimits
 from annotate_tool.dataset import SUPPORTED_IMAGE_SUFFIXES
-from annotate_tool.importer import AssignmentImportError, inspect_archive
+from annotate_tool.importer import (
+    AssignmentImportError,
+    AssignmentStorageError,
+    inspect_archive,
+)
 from annotate_tool.models import ClassInfo
 
 
@@ -16,6 +20,10 @@ ReferenceClass = ClassInfo
 
 
 class ReferenceCatalogError(ValueError):
+    pass
+
+
+class ReferenceCatalogStorageError(ReferenceCatalogError):
     pass
 
 
@@ -76,10 +84,14 @@ def _inspect_catalog(zip_path: Path, limits: ImportLimits) -> tuple[dict[int, st
                         f"unreadable reference image for class {class_id}: {exc}"
                     ) from exc
             return names, images
+    except AssignmentStorageError as exc:
+        raise ReferenceCatalogStorageError("could not access reference catalog") from exc
     except AssignmentImportError as exc:
         raise ReferenceCatalogError(str(exc)) from exc
-    except (BadZipFile, OSError) as exc:
-        raise ReferenceCatalogError(f"could not read reference catalog: {exc}") from exc
+    except BadZipFile as exc:
+        raise ReferenceCatalogError("could not read reference catalog") from exc
+    except OSError as exc:
+        raise ReferenceCatalogStorageError("could not access reference catalog") from exc
 
 
 def import_reference_catalog(

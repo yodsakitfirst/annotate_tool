@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 import shutil
 import uuid
@@ -13,10 +14,11 @@ from annotate_tool.api.schemas.catalogs import (
     CatalogResponse,
 )
 from annotate_tool.repositories.catalogs import CatalogRecord
-from annotate_tool.services.catalog_service import CatalogImportError
+from annotate_tool.services.catalog_service import CatalogImportError, CatalogStorageError
 
 
 router = APIRouter()
+logger = logging.getLogger("annotate_tool")
 
 
 def catalog_response(record: CatalogRecord, context: AppContext) -> CatalogResponse:
@@ -53,8 +55,19 @@ def create_catalog(name: str = Form(...), catalog_zip: UploadFile = File(...), c
         try:
             record = context.catalog_service.import_catalog(name, upload_path)
         except CatalogImportError as exc:
+            logger.warning("Catalog import rejected")
             raise ApiError(422, "catalog_invalid", str(exc)) from exc
+        except CatalogStorageError as exc:
+            logger.exception("Catalog import storage failure")
+            raise ApiError(
+                503, "storage_unavailable", "Catalog storage is unavailable"
+            ) from exc
         return catalog_response(record, context)
+    except OSError as exc:
+        logger.exception("Catalog upload storage failure")
+        raise ApiError(
+            503, "storage_unavailable", "Catalog storage is unavailable"
+        ) from exc
     finally:
         upload_path.unlink(missing_ok=True)
 

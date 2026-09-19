@@ -21,6 +21,10 @@ class AssignmentImportError(ValueError):
     pass
 
 
+class AssignmentStorageError(AssignmentImportError):
+    pass
+
+
 def _is_symlink(info: ZipInfo) -> bool:
     return info.create_system == 3 and stat.S_IFMT(info.external_attr >> 16) == stat.S_IFLNK
 
@@ -59,8 +63,10 @@ def inspect_archive(zip_path: Path, limits: ImportLimits) -> tuple[str, ...]:
                 destinations.add(key)
                 names.append(safe_path.as_posix())
             return tuple(names)
-    except (BadZipFile, OSError) as exc:
-        raise AssignmentImportError(f"could not read ZIP archive: {exc}") from exc
+    except BadZipFile as exc:
+        raise AssignmentImportError("could not read ZIP archive") from exc
+    except OSError as exc:
+        raise AssignmentStorageError("could not access ZIP archive") from exc
 
 
 def _dataset_root(extraction_root: Path) -> Path:
@@ -178,8 +184,10 @@ def import_dataset(
         return metadata
     except AssignmentImportError:
         raise
-    except (BadZipFile, OSError) as exc:
-        raise AssignmentImportError(f"could not import assignment: {exc}") from exc
+    except BadZipFile as exc:
+        raise AssignmentImportError("could not import assignment") from exc
+    except OSError as exc:
+        raise AssignmentStorageError("could not access assignment storage") from exc
     finally:
         if not imported and destination.exists():
             shutil.rmtree(destination)

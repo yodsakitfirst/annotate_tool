@@ -1,3 +1,6 @@
+import logging
+import sqlite3
+
 from tests.api.test_catalogs import upload_catalog
 from tests.api.test_projects import create_project
 
@@ -73,3 +76,34 @@ def test_last_write_wins_per_annotation_and_other_box_is_unchanged(api_client):
     assert latest.json()["current_class_id"] == 7
     assert latest.json()["version"] == 2
     assert second_after == second
+
+
+def test_annotation_database_failure_is_logged_and_structured(
+    api_client, monkeypatch, caplog
+):
+    catalog_id = upload_catalog(api_client).json()["id"]
+    project = create_project(api_client, catalog_id).json()
+    annotation = first_annotation(api_client, project["id"])
+    secret = r"C:\internal\app.sqlite3"
+
+    def fail_update(*_args, **_kwargs):
+        raise sqlite3.OperationalError(f"database is locked at {secret}")
+
+    monkeypatch.setattr(
+        api_client.app.state.context.annotation_service, "update", fail_update
+    )
+
+    with caplog.at_level(logging.ERROR, logger="annotate_tool"):
+        response = api_client.patch(
+            f"/api/v1/annotations/{annotation['id']}",
+            json={"action": "skip"},
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error"] == {
+        "code": "annotation_write_failed",
+        "message": "Annotation could not be saved",
+        "details": {},
+    }
+    assert secret not in response.text
+    assert "Annotation write failed" in caplog.text

@@ -5,7 +5,7 @@ import uuid
 
 from annotate_tool.config import ImportLimits
 from annotate_tool.dataset import DatasetLoadError, load_assignment, source_class_name
-from annotate_tool.importer import AssignmentImportError, import_dataset
+from annotate_tool.importer import AssignmentImportError, AssignmentStorageError, import_dataset
 from annotate_tool.repositories.catalogs import CatalogRepository
 from annotate_tool.repositories.projects import ProjectRepository, ProjectSummary
 from annotate_tool.v2.config import V2Paths
@@ -13,6 +13,10 @@ from annotate_tool.v2.filesystem import publish_directory
 
 
 class ProjectImportError(ValueError):
+    pass
+
+
+class ProjectStorageError(RuntimeError):
     pass
 
 
@@ -91,8 +95,12 @@ class ProjectService:
                 problems=problems,
             )
             return self.projects.get(project_id)
-        except (AssignmentImportError, DatasetLoadError, OSError) as exc:
+        except AssignmentStorageError as exc:
+            raise ProjectStorageError("Project storage operation failed") from exc
+        except (AssignmentImportError, DatasetLoadError) as exc:
             raise ProjectImportError(str(exc)) from exc
+        except OSError as exc:
+            raise ProjectStorageError("Project storage operation failed") from exc
         finally:
             if staged_root.exists():
                 shutil.rmtree(staged_root)
