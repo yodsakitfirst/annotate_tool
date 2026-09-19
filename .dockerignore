@@ -6,6 +6,8 @@ frontend/node_modules
 frontend/dist
 frontend/test-results
 frontend/playwright-report
+annotation-data
+backups
 __pycache__
 .pytest_cache
 *.pyc

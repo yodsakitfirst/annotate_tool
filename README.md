@@ -84,14 +84,16 @@ The command fingerprints names and image contents, preserves sparse IDs, Unicode
 
 ## Docker
 
-Build and start the application in the background with Docker Compose:
+The full Linux production runbook is [docs/deployment.md](docs/deployment.md). It covers private-network requirements, storage permissions, health checks, backup, restore, upgrades, rollback preparation, and container-replacement testing.
+
+Build and start the application with Docker Compose:
 
 ```powershell
+New-Item -ItemType Directory -Force .\annotation-data, .\backups
 docker compose up --build -d
 ```
 
-Open `http://localhost:8000`. Uploaded data and annotation decisions are stored in the named
-`annotation-desk-data` volume. View logs or stop the application with:
+Open `http://localhost:8000`. Uploaded data and annotation decisions are stored in the host directory `./annotation-data`, mounted at `/data` in the container. View logs or stop the application with:
 
 ```powershell
 docker compose logs -f
@@ -102,11 +104,11 @@ Alternatively, build and run the single-service image directly:
 
 ```powershell
 docker build -t annotation-desk .
-docker volume create annotation-desk-data
-docker run --rm -p 8000:8000 `
+New-Item -ItemType Directory -Force .\annotation-data
+docker run --rm --name annotation-desk -p 8000:8000 `
   -e PORT=8000 `
   -e ANNOTATE_TOOL_DATA_DIR=/data `
-  -v annotation-desk-data:/data `
+  -v "${PWD}\annotation-data:/data" `
   annotation-desk
 ```
 
@@ -114,13 +116,14 @@ The multi-stage build runs frontend tests and produces fingerprinted assets befo
 
 ## Persistence and backup
 
-`ANNOTATE_TOOL_DATA_DIR` is required for a durable deployment. Mount it on persistent storage. If it points into an ephemeral container filesystem, every uploaded catalog, project, and decision can disappear on redeploy or restart. The server logs a warning when the variable is absent; that warning does not make ephemeral storage safe.
+**Never deploy without persistent storage.** `ANNOTATE_TOOL_DATA_DIR` is required for a durable deployment and must be mounted from the host. If it points into an ephemeral container filesystem, every uploaded catalog, project, and decision can disappear on redeploy or restart. The server logs a warning when the variable is absent; that warning does not make ephemeral storage safe.
 
-Back up the entire data directory as one unit, including `app.sqlite3`, `catalogs/`, and `projects/`. For a simple single-process deployment, stop the container or use a filesystem snapshot before copying it:
+Back up the entire data directory as one unit, including `app.sqlite3`, `catalogs/`, and `projects/`. Stop the service before using the offline helper:
 
-```powershell
-docker stop annotation-desk
-Copy-Item -Recurse D:\annotation-desk-data D:\backups\annotation-desk-$(Get-Date -Format yyyyMMdd-HHmmss)
+```bash
+docker compose down
+./scripts/backup.sh ./annotation-data ./backups
+docker compose up -d
 ```
 
 Uploaded label files and `backups/labels_original/` are immutable. Decisions live in SQLite. Exports are constructed in memory from the immutable originals and current decisions.
@@ -129,7 +132,7 @@ Uploaded label files and `backups/labels_original/` are immutable. Decisions liv
 
 - Run exactly one application replica for this SQLite/filesystem MVP.
 - Mount one writable persistent data directory and back it up externally.
-- Restrict the service to the internal network because it has no login or permissions.
+- Restrict the service to Tailscale, a company VPN, a private LAN, or equivalent firewall-controlled network because it has no login or permissions. Do not expose it directly to the public internet.
 - Configure the platform request-size and request-timeout limits for synchronous ZIP imports.
 - The hosting platform must pass `$PORT`, allow binding to `0.0.0.0`, preserve the mounted volume across restart/redeploy, and provide enough memory for ZIP validation.
 - CloudViu compatibility is not claimed until its build command, port injection, persistent volumes, upload limits, request timeouts, memory limits, and sleep/restart behavior are verified.
