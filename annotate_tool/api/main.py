@@ -10,19 +10,29 @@ from annotate_tool.api.errors import install_error_handlers
 from annotate_tool.api.routes import annotations, catalogs, exports, health, images, media, projects
 
 
+logger = logging.getLogger("annotate_tool")
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or Settings()
     context = build_context(resolved_settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        context.paths.ensure()
-        context.database.initialize()
+        logger.info("Starting Annotation Desk")
+        try:
+            context.paths.validate_writable()
+            context.database.initialize()
+            context.database.check_accessible()
+        except Exception:
+            logger.exception("Application startup validation failed")
+            raise
         app.state.context = context
         if "ANNOTATE_TOOL_DATA_DIR" not in os.environ:
-            logging.getLogger("annotate_tool").warning(
+            logger.warning(
                 "ANNOTATE_TOOL_DATA_DIR is not set; uploaded data may be on ephemeral storage"
             )
+        logger.info("Annotation Desk startup validation complete")
         yield
 
     app = FastAPI(title="Annotation Platform", lifespan=lifespan)

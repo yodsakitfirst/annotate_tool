@@ -119,3 +119,9 @@ class Database:
                 connection.execute(
                     "ALTER TABLE annotations ADD COLUMN source_class_name TEXT NOT NULL DEFAULT ''"
                 )
+
+    def check_accessible(self) -> None:
+        with self.connect() as connection:
+            row = connection.execute("PRAGMA quick_check").fetchone()
+        if row is None or row[0] != "ok":
+            raise sqlite3.DatabaseError("SQLite quick check failed")
